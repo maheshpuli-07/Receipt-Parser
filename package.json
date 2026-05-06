@@ -1,0 +1,22 @@
+{
+  "name": "receipt-parser",
+  "version": "1.0.0",
+  "description": "Receipt parser - extract structured data from receipt photos",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "start": "npm start --workspace=backend",
+    "install-all": "npm install && npm install --workspace=backend && npm install --workspace=frontend"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

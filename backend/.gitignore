@@ -1,0 +1,18 @@
+# Backend .gitignore
+node_modules/
+dist/
+.env
+.env.local
+.DS_Store
+*.db
+*.sqlite
+uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
