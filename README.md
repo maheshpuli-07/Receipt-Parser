@@ -5,19 +5,20 @@ A full-stack web application that extracts structured data from receipt photos u
 ## What This Does
 
 Receipt Parser lets users upload a photo of a receipt (JPG or PNG) and automatically extracts:
+
 - **Merchant name** - The store or restaurant
 - **Date** - When the purchase was made
 - **Line items** - Individual products/services with amounts
 - **Total** - The final amount paid
 
-The extracted data appears in an inline editor where users can correct any mistakes, then save the corrected receipt for later reference. Receipts persist locally in SQLite.
+The extracted data appears in an inline editor where users can correct any mistakes, then save the corrected receipt for later reference. Receipts are persisted in **MongoDB** (database `receipt_parser`, collection `receipts`).
 
 ## Tech Stack
 
 - **Backend**: Node.js + Express + TypeScript
 - **Frontend**: React 18 + Vite + TypeScript
 - **AI/LLM**: GPT-4o (via OpenAI API)
-- **Storage**: SQLite (local, single-file database)
+- **Storage**: MongoDB
 - **Image Processing**: Native browser File API + base64 encoding
 
 ## Setup & Running
@@ -25,183 +26,205 @@ The extracted data appears in an inline editor where users can correct any mista
 ### Prerequisites
 
 - Node.js 18+ and npm
+- **MongoDB** running (default: `mongodb://localhost:27017`)
 - An OpenAI API key (get one at https://platform.openai.com/api-keys)
 
 ### Quick Start
 
 1. **Clone/navigate to the project**
+
    ```bash
    cd Handa_Assignment
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
-3. **Create your .env file**
+3. **Configure the backend**
+
    ```bash
+   cd backend
    cp .env.example .env
    ```
-   Then edit `.env` and add your OpenAI API key:
-   ```
+
+   Edit `backend/.env`:
+
+   ```env
    OPENAI_API_KEY=sk-...
    PORT=3001
+   MONGODB_URI=mongodb://localhost:27017
    ```
 
-4. **Start the dev server**
+4. **Start development (from repo root)**
+
    ```bash
+   cd ..
    npm run dev
    ```
 
-   This runs both the Express backend (port 3001) and Vite dev server (port 5173) concurrently.
+   This runs the Express API (default port **3001**) and the Vite dev server (default **5173**) concurrently.
 
 5. **Open in browser**
-   - Navigate to `http://localhost:5173`
-   - Upload a receipt photo
-   - Review and edit the extracted data
-   - Save it
+
+   - Navigate to `http://localhost:5173` (or the port Vite prints if 5173 is busy)
+   - Upload a receipt photo, review/edit, and save
 
 ## Project Structure
 
-```
-src/
-  ├── server.ts          # Express server, API endpoints
-  ├── db.ts              # SQLite database layer
-  ├── llm.ts             # Claude API integration
-  ├── App.tsx            # Main React component
-  ├── main.tsx           # Vite entry point
-  └── components/
-      ├── UploadForm.tsx     # File upload UI
-      ├── ReceiptList.tsx    # List of saved receipts
-      └── ReceiptEditor.tsx  # Inline editing & correction UI
-  └── styles/
-      └── App.css        # All styling
+Monorepo layout:
 
-index.html              # HTML template
-vite.config.ts          # Vite configuration
-tsconfig.json           # TypeScript config
-.env                    # Environment variables (not committed)
-.env.example            # Template for .env
+```
+Handa_Assignment/
+├── package.json           # npm workspaces; scripts to run both apps
+├── backend/
+│   ├── src/
+│   │   ├── server.ts      # Express server, API endpoints
+│   │   ├── db.ts          # MongoDB data access
+│   │   └── llm.ts         # OpenAI / GPT-4o receipt parsing
+│   ├── .env.example
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   ├── components/    # UploadForm, ReceiptList, ReceiptEditor
+│   │   └── styles/
+│   ├── index.html
+│   ├── vite.config.ts     # proxies /api → http://localhost:3001
+│   └── package.json
+└── README.md
 ```
 
 ## API Endpoints
 
 ### `POST /api/parse`
+
 Uploads an image and extracts receipt data.
+
 - **Input**: Multipart form data with `image` field
 - **Output**: `{ id, merchant, date, lineItems, total, confidence, createdAt, updatedAt }`
 
 ### `PUT /api/receipts/:id`
+
 Updates an existing receipt with corrected data.
+
 - **Input**: JSON with updated fields
 - **Output**: Updated receipt object
 
 ### `GET /api/receipts/:id`
+
 Fetches a single receipt by ID.
 
 ### `GET /api/receipts`
+
 Lists all saved receipts, sorted by creation date (newest first).
 
 ### `DELETE /api/receipts/:id`
+
 Deletes a receipt.
 
 ## Key Decisions & Tradeoffs
 
 ### 1. **What counts as a line item?**
+
 I include only actual products/services, excluding:
+
 - Subtotals (redundant with line items)
-- Taxes (usually region-specific and user can add manually if needed)
+- Taxes (usually region-specific; user can add manually if needed)
 - Delivery fees (not part of the product purchase)
-- Tip lines (can be added as a separate item if user wants)
+- Tip lines (can be added as a separate item if the user wants)
 
 **Why**: Cleaner data structure. If a user needs tax/tip tracking, they can add it manually in the editor.
 
 ### 2. **LLM choice: GPT-4o**
+
 I chose GPT-4o for:
-- **Accuracy**: Best-in-class multimodal vision for receipt parsing
-- **Cost**: Competitive pricing with good token efficiency
-- **Speed**: Fast inference for real-time parsing
-- **Tradeoff**: Requires OpenAI API key, but more accessible to most developers
+
+- **Accuracy**: Strong multimodal vision for receipt parsing
+- **Cost**: Competitive pricing with reasonable token usage
+- **Speed**: Fast enough for interactive uploads
+
+**Tradeoff**: Requires an OpenAI API key.
 
 ### 3. **Error handling with LLM**
-I use:
-- **Structured JSON responses**: Claude returns a strict JSON schema, easier to parse
-- **Confidence scores**: Claude rates its own confidence (0-1), helping users know what to scrutinize
-- **Graceful fallbacks**: If parsing fails, we surface a generic "Failed to parse" error rather than crashing
 
-**Alternative I considered**: Retry with a different model or prompt, but decided against it to keep latency low.
+I use:
+
+- **Structured JSON responses**: The model returns a strict JSON shape for parsing
+- **Confidence scores**: The model rates confidence (0–1), so users know what to double-check
+- **Graceful fallbacks**: Parsing failures surface a clear error instead of crashing the server
 
 ### 4. **Low-confidence extraction handling**
-I display a confidence percentage badge on every receipt. For blurry/faded receipts:
-- Claude's confidence score will be low (0.3-0.5)
-- The UI makes this visible so users know to double-check
-- Correction flow is fast and easy
 
-**Alternative**: Block uploads under a threshold, but that's worse UX—let the user decide.
+I display a confidence percentage on every receipt. For blurry or faded receipts:
 
-### 5. **Database choice: SQLite**
-I used SQLite because:
-- **Local persistence**: No server needed
-- **Zero setup**: Single `.db` file
-- **Sufficient for single-user**: This is a local app, not a SaaS
-- **Tradeoff**: Can't scale horizontally, but that's out of scope
+- The confidence score will be lower
+- The UI makes that visible so users know to verify
+- Correction flow is quick
 
-### 6. **Correction UX (most important piece)**
+**Alternative**: Block uploads under a threshold—worse UX; letting the user decide is better.
+
+### 5. **Database choice: MongoDB**
+
+Receipts are stored in MongoDB because:
+
+- **Natural fit for documents**: Each receipt is a JSON-shaped document (line items, metadata)
+- **Easy to extend**: New fields without migrations-heavy workflows for this app size
+- **Local or hosted**: Same driver works against `localhost` or Atlas
+
+**Tradeoff**: You must run MongoDB (or point `MONGODB_URI` at a hosted cluster).
+
+### 6. **Correction UX**
+
 The editor is built for speed:
-- **Inline editing**: No modal dialogs or page navigation
-- **Add/remove items**: Easy to add forgotten items or remove duplicates
-- **Auto-calculate total**: One click to recalculate from line items
-- **Immediate feedback**: Save message shows success/failure
-- **Visual hierarchy**: Merchant and date at top, items in a clean table, total at bottom
 
-**Why this matters**: The LLM isn't perfect, but the human almost always is. Make it fast to fix.
+- **Inline editing**: No extra modals for basic edits
+- **Add/remove items**: Fix omissions or duplicates quickly
+- **Auto-calculate total**: One click from line items
+- **Save feedback**: Success/error message after save
+
+**Why this matters**: The model is not perfect; making human fixes fast is the main product value.
 
 ## What I'd do with another week
 
-1. **Batch processing**: Queue multiple receipts for processing (Claude API has a Batch API)
-2. **Expense categorization**: Add a category field (Groceries, Dining, Gas, etc.) and tag line items
-3. **Duplicate detection**: Warn if a very similar receipt was already saved (same merchant/date)
-4. **Receipt image storage**: Keep a copy of the uploaded image for reference (currently discarded)
-5. **Export**: CSV or JSON export of all receipts for expense tracking
-6. **Mobile optimization**: Better responsive design for phone uploads
-7. **OCR fallback**: If Claude fails, fall back to Tesseract.js for basic OCR
-8. **Advanced search**: Filter receipts by merchant, date range, total amount range
-
-## One Thing I'd Push Back On
-
-**"Assume a single user."** In real product work, I'd push back on this because:
-
-- Expense tracking is almost always multi-person (shared household, business team, expense reimbursement)
-- Building auth from the start is ~30 minutes of extra work
-- Single-user → multi-user is a painful migration later
-
-However, I understand this is a take-home with a time constraint, so I built for single-user as specified. The code is structured to support auth later (each receipt has `createdAt`, not `createdBy`—easy to add).
+1. **Batch processing**: Queue multiple receipts
+2. **Expense categorization**: Categories/tags per receipt or line item
+3. **Duplicate detection**: Warn on similar merchant/date/total
+4. **Receipt image storage**: Optional storage of originals (today temp files are removed after parse)
+5. **Export**: CSV/JSON export
+6. **Mobile polish**: Even tighter layouts for phone cameras
+7. **Advanced search**: Filters by merchant, date range, amount
 
 ## Testing
 
-No formal test suite (per spec: "write tests where they'd actually catch something"). The correction flow is tested manually, and the API layer is simple enough that bugs surface quickly in dev.
+No formal test suite in this repo. The correction flow is validated manually; the API surface is small and breaks are obvious in development.
 
 ## Environment Variables
+
+Backend (`backend/.env`):
 
 | Variable | Required | Example |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Yes | `sk-...` |
 | `PORT` | No | `3001` |
+| `MONGODB_URI` | No | `mongodb://localhost:27017` |
 
 ## Browser Support
 
 - Chrome/Edge: ✓
 - Firefox: ✓
 - Safari: ✓
-- Mobile browsers: ✓ (responsive design)
+- Mobile browsers: ✓ (responsive layout)
 
 ## Known Limitations
 
-- File upload size capped at 50MB (configurable in `server.ts`)
+- Upload size capped at 50MB (configurable in `backend/src/server.ts`)
 - Image format: JPG or PNG only
 - No batch processing (single receipt at a time)
-- No receipt image storage (image is discarded after parsing)
+- Parsed image is not kept after processing (by design in current flow)
 
 ## License
 
